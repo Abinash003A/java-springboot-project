@@ -155,8 +155,7 @@ name: Deploy Backend to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -194,26 +193,40 @@ jobs:
             cd backend
             mvn clean package -DskipTests
 
-            # Kill old process
-            pkill -f datastore || true
+            # Create systemd service
+            sudo tee /etc/systemd/system/backend.service > /dev/null <<EOF
+            [Unit]
+            Description=Spring Boot Backend
+            After=network.target
 
-            # Start app
-            nohup env \
-              MYSQL_HOST=${{ secrets.DB_HOST }} \
-              MYSQL_PORT=3306 \
-              MYSQL_USERNAME=${{ secrets.DB_USERNAME }} \
-              MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              java -jar target/datastore-0.0.7.jar \
-              --server.port=8084 \
-              --server.address=0.0.0.0 \
-              > $LOG_DIR/backend.log 2>&1 &
+            [Service]
+            User=ec2-user
+            WorkingDirectory=$APP_DIR/repo/backend
+
+            ExecStart=/usr/bin/java -jar $APP_DIR/repo/backend/target/datastore-0.0.7.jar --server.port=8084 --server.address=0.0.0.0
+
+            Environment=MYSQL_HOST=${{ secrets.DB_HOST }}
+            Environment=MYSQL_PORT=3306
+            Environment=MYSQL_USERNAME=${{ secrets.DB_USERNAME }}
+            Environment=MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+            Restart=always
+            RestartSec=5
+
+            StandardOutput=append:$LOG_DIR/backend.log
+            StandardError=append:$LOG_DIR/backend-error.log
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            # Restart service
+            sudo systemctl daemon-reload
+            sudo systemctl enable backend
+            sudo systemctl restart backend
 
             sleep 10
 
-            # Verify
-            curl -f http://localhost:8084/actuator/health
-
-            # Health check
-            curl -f http://localhost:8084/actuator/health || exit 1
+            sudo systemctl status backend --no-pageruator/health || exit 1
 
             echo "✅ Backend deployment successful"
