@@ -90,7 +90,7 @@
 #             echo "✅ Deployment successful"
 
 #  #short
-name: Deploy Streamlit Frontend to EC2
+name: Deploy Frontend to EC2
 
 on:
   workflow_run:
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH
+      - name: Deploy Frontend
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -114,61 +114,42 @@ jobs:
             set -e
 
             APP_DIR=/home/ec2-user/front
-            REPO_NAME=Java-springboot-project
-            REPO_URL=https://github.com/CloudTechDevOps/Java-springboot-project.git
+            REPO=https://github.com/CloudTechDevOps/Java-springboot-project.git
             LOG_DIR=/home/ec2-user/logs
 
-            echo "🚀 Starting frontend deployment..."
-
             mkdir -p $APP_DIR $LOG_DIR
-            sudo chown ec2-user:ec2-user $LOG_DIR
-
             cd $APP_DIR
 
-            # Clone or pull repo
-            if [ -d "$REPO_NAME/.git" ]; then
-              cd $REPO_NAME
+            # Clone or pull
+            if [ -d "repo/.git" ]; then
+              cd repo
               git reset --hard
               git pull origin main
             else
-              git clone $REPO_URL
-              cd $REPO_NAME
+              git clone $REPO repo
+              cd repo
             fi
 
             cd frontend
 
-            # Ensure Python installed (only if missing)
-            command -v python3 || sudo dnf install -y python3
-            command -v pip3 || sudo dnf install -y python3-pip
-
-            # Create virtualenv if not exists
-            if [ ! -d "venv" ]; then
-              python3 -m venv venv
-            fi
-
-            # Activate venv
+            # Setup venv
+            python3 -m venv venv || true
             source venv/bin/activate
 
-            # Install dependencies (optimized)
             pip install --upgrade pip
-            pip install -r requirements.txt --no-cache-dir
+            pip install -r requirements.txt
 
-            # Kill any process using port 8501
-            sudo fuser -k 8501/tcp || true
-
-            # Create systemd service (clean version)
+            # Create systemd service
             sudo tee /etc/systemd/system/frontend.service > /dev/null <<EOF
             [Unit]
-            Description=Streamlit Frontend App
+            Description=Streamlit Frontend
             After=network.target
 
             [Service]
             User=ec2-user
-            WorkingDirectory=/home/ec2-user/front/Java-springboot-project/frontend
+            WorkingDirectory=$APP_DIR/repo/frontend
 
-            ExecStart=/home/ec2-user/front/Java-springboot-project/frontend/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0
-
-            Environment=API_URL=http://localhost:8084
+            ExecStart=$APP_DIR/repo/frontend/venv/bin/python -m streamlit run app.py --server.port=8501 --server.address=0.0.0.0
 
             Restart=always
             RestartSec=5
@@ -180,16 +161,14 @@ jobs:
             WantedBy=multi-user.target
             EOF
 
-            # Reload and restart service
+            # Restart service
             sudo systemctl daemon-reload
             sudo systemctl enable frontend
             sudo systemctl restart frontend
 
-            # Wait and verify
             sleep 10
-            sudo systemctl status frontend --no-pager
 
-            echo "✅ Frontend deployment successful"
+            sudo systemctl status frontend --no-pager
 
             sudo systemctl status frontend --no-pager
 
