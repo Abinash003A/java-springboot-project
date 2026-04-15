@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
+      - name: Deploy Backend
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -174,45 +174,28 @@ jobs:
             set -e
 
             APP_DIR=/home/ec2-user/app
-            REPO_NAME=Java-springboot-project
-            REPO_URL=https://github.com/CloudTechDevOps/Java-springboot-project.git
+            REPO=https://github.com/CloudTechDevOps/Java-springboot-project.git
             LOG_DIR=/home/ec2-user/logs
 
-            echo "🚀 Starting backend deployment..."
-
             mkdir -p $APP_DIR $LOG_DIR
-            sudo chown ec2-user:ec2-user $LOG_DIR
-
             cd $APP_DIR
 
-            # Clone or pull repo
-            if [ -d "$REPO_NAME/.git" ]; then
-              cd $REPO_NAME
+            # Clone or pull
+            if [ -d "repo/.git" ]; then
+              cd repo
               git reset --hard
               git pull origin main
             else
-              git clone $REPO_URL
-              cd $REPO_NAME
+              git clone $REPO repo
+              cd repo
             fi
 
-            # Build backend
+            # Build
             cd backend
             mvn clean package -DskipTests
 
-            # Stop existing app
-            PIDS=$(pgrep -f "java.*datastore-0.0.7.jar" || true)
-            if [ -n "$PIDS" ]; then
-              echo "Stopping PIDs: $PIDS"
-              kill $PIDS || true
-              sleep 5
-              for PID in $PIDS; do
-                kill -9 $PID || true
-              done
-            else
-              echo "No running backend found"
-            fi
-
-            cd target
+            # Kill old process
+            pkill -f datastore || true
 
             # Start app
             nohup env \
@@ -220,14 +203,15 @@ jobs:
               MYSQL_PORT=3306 \
               MYSQL_USERNAME=${{ secrets.DB_USERNAME }} \
               MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              LOG_FILE_PATH=$LOG_DIR/datastore.log \
-              java -jar datastore-0.0.7.jar \
+              java -jar target/datastore-0.0.7.jar \
               --server.port=8084 \
               --server.address=0.0.0.0 \
-              > $LOG_DIR/backend-nohup.out 2>&1 &
+              > $LOG_DIR/backend.log 2>&1 &
 
-            # Wait for startup
-            sleep 15
+            sleep 10
+
+            # Verify
+            curl -f http://localhost:8084/actuator/health
 
             # Health check
             curl -f http://localhost:8084/actuator/health || exit 1
