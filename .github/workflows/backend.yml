@@ -148,3 +148,61 @@ jobs:
             echo "✅ Application is UP"
       
             echo "✅ Application and DB are UP"
+
+# #short 
+
+# - name: Deploy to EC2
+#   uses: appleboy/ssh-action@v1.1.0
+#   with:
+#     host: ${{ secrets.EC2_HOST }}
+#     username: ec2-user
+#     key: ${{ secrets.EC2_KEY }}
+#     script: |
+#       set -e
+
+#       APP_DIR=/home/ec2-user/app
+#       REPO_NAME=Java-springboot-project
+#       LOG_DIR=/var/log/app
+
+#       mkdir -p $APP_DIR $LOG_DIR
+#       sudo chown ec2-user:ec2-user $LOG_DIR
+
+#       cd $APP_DIR
+
+#       if [ -d "$REPO_NAME/.git" ]; then
+#         cd $REPO_NAME
+#         git reset --hard
+#         git pull origin main
+#       else
+#         git clone https://github.com/CloudTechDevOps/Java-springboot-project.git
+#         cd $REPO_NAME
+#       fi
+
+#       cd backend
+#       mvn clean package -DskipTests
+
+#       PIDS=$(pgrep -f "java.*datastore-0.0.7.jar" || true)
+#       if [ -n "$PIDS" ]; then
+#         kill $PIDS || true
+#         sleep 5
+#         for PID in $PIDS; do
+#           kill -9 $PID || true
+#         done
+#       fi
+
+#       cd target
+
+#       nohup env \
+#         MYSQL_HOST=${{ secrets.DB_HOST }} \
+#         MYSQL_PORT=3306 \
+#         MYSQL_USERNAME=${{ secrets.DB_USERNAME }} \
+#         MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
+#         LOG_FILE_PATH=$LOG_DIR/datastore.log \
+#         java -jar datastore-0.0.7.jar \
+#         --server.port=8084 \
+#         --server.address=0.0.0.0 \
+#         > $LOG_DIR/nohup.out 2>&1 &
+
+#       sleep 15
+
+#       curl -f http://localhost:8084/actuator/health || exit 1
